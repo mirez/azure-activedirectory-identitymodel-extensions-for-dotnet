@@ -1151,6 +1151,82 @@ namespace System.IdentityModel.Tokens.Jwt.Tests
 
             return theoryData;
         }
+
+#pragma warning disable CS3016 // Arrays as attribute arguments is not CLS-compliant
+        [Theory, MemberData(nameof(RsaKeyWrapTokenTheoryData))]
+#pragma warning restore CS3016 // Arrays as attribute arguments is not CLS-compliant
+        public void RsaKeyWrapTokenTest(RsaKeyWrapTokenTheoryData theoryData)
+        {
+            TestUtilities.WriteHeader($"{this}.RsaKeyWrapTokenTest", theoryData);
+
+            try
+            {
+                var signingCredentials = KeyingMaterial.DefaultSymmetricSigningCreds_256_Sha2;
+                var encryptingCredentials = new EncryptingCredentials(KeyingMaterial.DefaultX509Key_2048, theoryData.Padding, SecurityAlgorithms.Aes256CbcHmacSha512);
+
+                var securityTokenDescriptor = new SecurityTokenDescriptor
+                {
+                    NotBefore = DateTimeOffset.Now.AddMinutes(-1).UtcDateTime,
+                    Expires = DateTimeOffset.Now.AddDays(7).UtcDateTime,
+                    IssuedAt = DateTimeOffset.Now.UtcDateTime,
+                    Issuer = "https://example.com",
+                    Audience = "https://example.com",
+                    SigningCredentials = signingCredentials,
+                    EncryptingCredentials = encryptingCredentials
+                };
+
+                var handler = new JwtSecurityTokenHandler();
+                var token = handler.CreateToken(securityTokenDescriptor);
+                var tokenString = handler.WriteToken(token);
+
+                var validationParameters = new TokenValidationParameters
+                {
+                    ValidateAudience = true,
+                    ValidAudience = "https://example.com",
+                    ValidateIssuer = true,
+                    ValidIssuer = "https://example.com",
+                    ValidateLifetime = true,
+                    RequireExpirationTime = true,
+                    RequireSignedTokens = true,
+                    IssuerSigningKey = signingCredentials.Key,
+                    TokenDecryptionKey = encryptingCredentials.Key
+                };
+
+                var handlerForValdiation = new JwtSecurityTokenHandler();
+                var principal = handlerForValdiation.ValidateToken(tokenString, validationParameters, out var validatedToken);
+
+                Assert.NotNull(principal);
+                theoryData.ExpectedException.ProcessNoException();
+            } catch (Exception ex)
+            {
+                theoryData.ExpectedException.ProcessException(ex);
+            }
+        }
+
+        public static TheoryData<RsaKeyWrapTokenTheoryData> RsaKeyWrapTokenTheoryData()
+        {
+            var theoryData = new TheoryData<RsaKeyWrapTokenTheoryData>();
+            var handler = new JwtSecurityTokenHandler();
+
+            theoryData.Add(new RsaKeyWrapTokenTheoryData
+            {
+                Padding = SecurityAlgorithms.RsaOAEP,
+                TestId = "Rsa key wrap token test using OAEP padding"
+            });
+
+            theoryData.Add(new RsaKeyWrapTokenTheoryData
+            {
+                Padding = SecurityAlgorithms.RsaPKCS1,
+                TestId = "Rsa key wrap token test using PKCS1 padding"
+            });
+
+            return theoryData;
+        }
+    }
+
+    public class RsaKeyWrapTokenTheoryData : TheoryDataBase
+    {
+        public string Padding;
     }
 
     public enum TokenType
