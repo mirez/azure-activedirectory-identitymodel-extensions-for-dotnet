@@ -1153,44 +1153,22 @@ namespace System.IdentityModel.Tokens.Jwt.Tests
         }
 
 #pragma warning disable CS3016 // Arrays as attribute arguments is not CLS-compliant
-        [Theory, MemberData(nameof(RsaKeyWrapTokenTheoryData))]
+        [Theory, MemberData(nameof(KeyWrapTokenTheoryData))]
 #pragma warning restore CS3016 // Arrays as attribute arguments is not CLS-compliant
-        public void RsaKeyWrapTokenTest(RsaKeyWrapTokenTheoryData theoryData)
+        public void KeyWrapTokenTest(KeyWrapTokenTheoryData theoryData)
         {
-            TestUtilities.WriteHeader($"{this}.RsaKeyWrapTokenTest", theoryData);
+            TestUtilities.WriteHeader($"{this}.KeyWrapTokenTest", theoryData);
 
             try
             {
                 var signingCredentials = KeyingMaterial.DefaultSymmetricSigningCreds_256_Sha2;
-                var encryptingCredentials = new EncryptingCredentials(KeyingMaterial.DefaultX509Key_2048, theoryData.Padding, SecurityAlgorithms.Aes256CbcHmacSha512);
-
-                var securityTokenDescriptor = new SecurityTokenDescriptor
-                {
-                    NotBefore = DateTimeOffset.Now.AddMinutes(-1).UtcDateTime,
-                    Expires = DateTimeOffset.Now.AddDays(7).UtcDateTime,
-                    IssuedAt = DateTimeOffset.Now.UtcDateTime,
-                    Issuer = "https://example.com",
-                    Audience = "https://example.com",
-                    SigningCredentials = signingCredentials,
-                    EncryptingCredentials = encryptingCredentials
-                };
+                var securityTokenDescriptor = Default.SecurityTokenDescriptor(theoryData.EncryptingCredentials, signingCredentials, null);
 
                 var handler = new JwtSecurityTokenHandler();
                 var token = handler.CreateToken(securityTokenDescriptor);
                 var tokenString = handler.WriteToken(token);
 
-                var validationParameters = new TokenValidationParameters
-                {
-                    ValidateAudience = true,
-                    ValidAudience = "https://example.com",
-                    ValidateIssuer = true,
-                    ValidIssuer = "https://example.com",
-                    ValidateLifetime = true,
-                    RequireExpirationTime = true,
-                    RequireSignedTokens = true,
-                    IssuerSigningKey = signingCredentials.Key,
-                    TokenDecryptionKey = encryptingCredentials.Key
-                };
+                var validationParameters = Default.TokenValidationParameters(theoryData.DecryptingCredentials.Key, signingCredentials.Key);
 
                 var handlerForValdiation = new JwtSecurityTokenHandler();
                 var principal = handlerForValdiation.ValidateToken(tokenString, validationParameters, out var validatedToken);
@@ -1203,30 +1181,51 @@ namespace System.IdentityModel.Tokens.Jwt.Tests
             }
         }
 
-        public static TheoryData<RsaKeyWrapTokenTheoryData> RsaKeyWrapTokenTheoryData()
+        public static TheoryData<KeyWrapTokenTheoryData> KeyWrapTokenTheoryData()
         {
-            var theoryData = new TheoryData<RsaKeyWrapTokenTheoryData>();
+            var theoryData = new TheoryData<KeyWrapTokenTheoryData>();
             var handler = new JwtSecurityTokenHandler();
+            var rsaOAEPEncryptingCredential = new EncryptingCredentials(KeyingMaterial.DefaultX509Key_2048, SecurityAlgorithms.RsaOAEP, SecurityAlgorithms.Aes256CbcHmacSha512);
+            var rsaPKCS1EncryptingCredential = new EncryptingCredentials(KeyingMaterial.DefaultX509Key_2048, SecurityAlgorithms.RsaPKCS1, SecurityAlgorithms.Aes256CbcHmacSha512);
 
-            theoryData.Add(new RsaKeyWrapTokenTheoryData
+            theoryData.Add(new KeyWrapTokenTheoryData
             {
-                Padding = SecurityAlgorithms.RsaOAEP,
-                TestId = "Rsa key wrap token test using OAEP padding"
+                EncryptingCredentials = rsaOAEPEncryptingCredential,
+                DecryptingCredentials = rsaOAEPEncryptingCredential,
+                TestId = "Key wrap token test using OAEP padding"
             });
 
-            theoryData.Add(new RsaKeyWrapTokenTheoryData
+            theoryData.Add(new KeyWrapTokenTheoryData
             {
-                Padding = SecurityAlgorithms.RsaPKCS1,
-                TestId = "Rsa key wrap token test using PKCS1 padding"
+                EncryptingCredentials = rsaPKCS1EncryptingCredential,
+                DecryptingCredentials = rsaPKCS1EncryptingCredential,
+                TestId = "Key wrap token test using PKCS1 padding"
+            });
+
+            theoryData.Add(new KeyWrapTokenTheoryData
+            {
+                EncryptingCredentials = rsaPKCS1EncryptingCredential,
+                DecryptingCredentials = Default.SymmetricEncryptingCredentials,
+                ExpectedException = ExpectedException.SecurityTokenDecryptionFailedException("IDX10609:"),
+                TestId = "Key wrap token test using RSA to wrap but symmetric key to unwrap"
+            });
+
+            theoryData.Add(new KeyWrapTokenTheoryData
+            {
+                EncryptingCredentials = Default.SymmetricEncryptingCredentials,
+                DecryptingCredentials = rsaPKCS1EncryptingCredential,
+                ExpectedException = ExpectedException.SecurityTokenDecryptionFailedException("IDX10609:"),
+                TestId = "Key wrap token test using symmetric key to wrap but RSA to unwrap"
             });
 
             return theoryData;
         }
     }
 
-    public class RsaKeyWrapTokenTheoryData : TheoryDataBase
+    public class KeyWrapTokenTheoryData : TheoryDataBase
     {
-        public string Padding;
+        public EncryptingCredentials EncryptingCredentials;
+        public EncryptingCredentials DecryptingCredentials;
     }
 
     public enum TokenType
